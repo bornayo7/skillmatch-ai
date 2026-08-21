@@ -1,0 +1,137 @@
+import { NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { getAuthConfig, getDatabaseConfig, getStorageConfig } from "@/lib/env";
+
+const requiredTables = [
+  "users",
+  "analyses",
+  "audit_events",
+  "candidate_recommendations",
+  "saved_target_roles"
+] as const;
+
+/** Tables expected to exist; columns checked only when the table is already present. */
+const requiredColumns = [
+  { table: "candidate_recommendations", column: "ai_insight" },
+  { table: "candidate_recommendations", column: "assigned_learning_modules" }
+] as const;
+
+export const dynamic = "force-dynamic";
+
+function getStorageHealth() {
+  try {
+    const storage = getStorageConfig();
+    return {
+      configured: storage.provider === "r2",
+      provider: storage.provider,
+      mode: storage.provider === "r2" ? "r2" : "local_memory",
+      persistent: storage.provider === "r2",
+      publicBaseUrlConfigured: storage.provider === "r2" ? Boolean(storage.publicBaseUrl) : false,
+      objectDeletionSupported: true,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      provider: "unknown",
+      mode: "degraded",
+      persistent: false,
+      publicBaseUrlConfigured: false,
+      objectDeletionSupported: false,
+      error: error instanceof Error ? error.message : "Storage health check failed.",
+    };
+  }
+}
+
+/** Whether the built-in demo credential users are active (no AUTH_USERS_JSON configured). */
+function getAuthHealth() {
+  try {
+    return { demoCredentialsActive: getAuthConfig(process.env, { requireUsers: false }).usesFallbackUsers };
+  } catch {
+    return { demoCredentialsActive: false };
+  }
+}
+
+function createMemoryHealthResponse() {
+  return NextResponse.json({
+    status: "ok",
+    database: {
+      configured: false,
+      mode: "memory",
+      schemaReady: false,
+      missingTables: requiredTables,
+      missingColumns: [] as string[]
+    },
+    storage: getStorageHealth(),
+    auth: getAuthHealth()
+  });
+}
+
+export async function GET() {
+  const { url } = getDatabaseConfig();
+
+  if (!url) {
+    return createMemoryHealthResponse();
+  }
+
+  try {
+    const sql = neon(url);
+    const tableRows = await sql`
+      select table_name
+      from information_schema.tables
+      where table_schema = 'public'
+    `;
+
+    const publicTables = new Set(tableRows.map((row) => String(row.table_name)));
+    const missingTables = requiredTables.filter((table) => !publicTables.has(table));
+
+    const columnRows = await sql`
+      select table_name, column_name
+      from information_schema.columns
+      where table_schema = 'public'
+    `;
+    const columnKeys = new Set(
+      columnRows.map((row) => `${String(row.table_name)}.${String(row.column_name)}`)
+    );
+    const missingColumns: string[] = [];
+    for (const { table, column } of requiredColumns) {
+      if (publicTables.has(table) && !columnKeys.has(`${table}.${column}`)) {
+        missingColumns.push(`${table}.${column}`);
+      }
+    }
+
+    const schemaReady = missingTables.length === 0 && missingColumns.length === 0;
+
+    return NextResponse.json(
+      {
+        status: schemaReady ? "ok" : "degraded",
+        database: {
+          configured: true,
+          mode: "postgres",
+          schemaReady,
+          missingTables,
+          missingColumns
+        },
+        storage: getStorageHealth(),
+        auth: getAuthHealth()
+      },
+      { status: schemaReady ? 200 : 503 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        status: "degraded",
+        database: {
+          configured: true,
+          mode: "postgres",
+          schemaReady: false,
+          missingTables: [...requiredTables],
+          missingColumns: [] as string[]
+        },
+        storage: getStorageHealth(),
+        auth: getAuthHealth(),
+        error: error instanceof Error ? error.message : "Database health check failed."
+      },
+      { status: 503 }
+    );
+  }
+}
