@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { deleteSavedTargetRole, listSavedTargetRoles, saveTargetRole } from "@/lib/db";
 import { roles } from "@/lib/seed-data";
 import { requireSameOrigin } from "@/lib/route-auth";
+import { deleteSavedTargetRole, listSavedTargetRoles, saveTargetRole } from "@/lib/saved-role-store";
 import { serverErrorResponse } from "@/lib/server-api-error";
+import { parseJsonRequestBody, savedTargetRoleRequestSchema } from "@/lib/validation";
 
 export async function GET() {
   const user = await getSessionUser();
@@ -29,29 +30,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   }
 
-  const payload = (await request.json()) as {
-    roleId?: string;
-    targetScore?: number;
-    currentScore?: number | null;
-    matchedSkills?: string[];
-    missingSkills?: string[];
-  };
-  const role = roles.find((item) => item.id === payload.roleId);
+  const { data, error } = await parseJsonRequestBody(savedTargetRoleRequestSchema, request);
+  if (!data) {
+    return NextResponse.json({ error }, { status: 400 });
+  }
+
+  const role = roles.find((item) => item.id === data.roleId);
   if (!role) {
     return NextResponse.json({ error: "Choose a valid target role." }, { status: 400 });
   }
 
-  const savedRole = await saveTargetRole({
-    employeeEmail: user.email,
-    roleId: role.id,
-    roleTitle: role.title,
-    targetScore: payload.targetScore,
-    currentScore: payload.currentScore,
-    matchedSkills: payload.matchedSkills,
-    missingSkills: payload.missingSkills
-  });
+  try {
+    const savedRole = await saveTargetRole({
+      employeeEmail: user.email,
+      roleId: role.id,
+      roleTitle: role.title,
+      targetScore: data.targetScore,
+      currentScore: data.currentScore,
+      matchedSkills: data.matchedSkills,
+      missingSkills: data.missingSkills
+    });
 
-  return NextResponse.json({ savedRole });
+    return NextResponse.json({ savedRole });
+  } catch (saveError) {
+    return serverErrorResponse(saveError);
+  }
 }
 
 export async function DELETE(request: Request) {
@@ -70,6 +73,13 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Saved role id is required." }, { status: 400 });
   }
 
-  await deleteSavedTargetRole({ employeeEmail: user.email, id });
-  return NextResponse.json({ ok: true });
+  try {
+    const deleted = await deleteSavedTargetRole({ employeeEmail: user.email, id });
+    if (!deleted) {
+      return NextResponse.json({ error: "Saved role not found." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (deleteError) {
+    return serverErrorResponse(deleteError);
+  }
 }
