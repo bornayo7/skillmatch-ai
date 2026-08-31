@@ -1,27 +1,13 @@
 import { NextResponse } from "next/server";
 import { setSessionUser } from "@/lib/auth";
+import { appendAuditEventSafely } from "@/lib/audit-store";
 import { verifyCredentials } from "@/lib/auth-model";
-import { appendAuditEvent } from "@/lib/db";
 import { clearRateLimit, consumeRateLimit, getClientAddress, peekRateLimit } from "@/lib/rate-limit";
 import { requireSameOrigin } from "@/lib/route-auth";
 import { loginRequestSchema, parseJsonRequestBody } from "@/lib/validation";
 
 const emailLimit = { limit: 5, windowSeconds: 15 * 60 };
 const ipLimit = { limit: 20, windowSeconds: 15 * 60 };
-
-async function appendLoginAuditEvent(input: {
-  actor: string;
-  actorRole?: string | null;
-  actorName?: string | null;
-  action: "failed_login" | "login";
-  details: Record<string, unknown>;
-}) {
-  try {
-    await appendAuditEvent(input);
-  } catch (error) {
-    console.error("Unable to append login audit event", error);
-  }
-}
 
 function tooManyAttemptsResponse(retryAfterSeconds: number) {
   return NextResponse.json(
@@ -40,7 +26,7 @@ export async function POST(request: Request) {
     const { data, error } = await parseJsonRequestBody(loginRequestSchema, request);
     if (!data) {
       if (error === "Malformed JSON body.") {
-        await appendLoginAuditEvent({
+        await appendAuditEventSafely({
           actor: "anonymous",
           action: "failed_login",
           details: { reason: "malformed_json" }
@@ -51,9 +37,6 @@ export async function POST(request: Request) {
     }
 
     const { email, password } = data;
-
-    // Only failed attempts count toward the limits, so legitimate sign-ins from a
-    // shared address (offices, CI) are never throttled by other users' successes.
     const emailKey = `login:email:${email}`;
     const clientAddress = getClientAddress(request);
     const ipKey = clientAddress ? `login:ip:${clientAddress}` : null;
@@ -77,7 +60,7 @@ export async function POST(request: Request) {
       if (ipKey) {
         await consumeRateLimit({ key: ipKey, ...ipLimit });
       }
-      await appendLoginAuditEvent({
+      await appendAuditEventSafely({
         actor: email || "anonymous",
         action: "failed_login",
         details: { reason: "invalid_credentials" }
@@ -87,7 +70,7 @@ export async function POST(request: Request) {
 
     await clearRateLimit(`login:email:${email}`);
     await setSessionUser(user);
-    await appendLoginAuditEvent({
+    await appendAuditEventSafely({
       actor: user.email,
       actorRole: user.role,
       actorName: user.name,
