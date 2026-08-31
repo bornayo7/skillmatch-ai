@@ -67,6 +67,43 @@ export function getCredentialUsers() {
   }
 }
 
+/**
+ * Re-resolves an authenticated identity against the current source of truth.
+ * This prevents a signed cookie from keeping stale privileges after an admin
+ * changes a database-backed user's role.
+ */
+export async function resolveCurrentSessionUser(session: SessionUser): Promise<SessionUser | null> {
+  const normalizedEmail = session.email.trim().toLowerCase();
+  const db = getDatabase();
+
+  if (db) {
+    const [databaseUser] = await db
+      .select({ name: users.name, email: users.email, role: users.role })
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1);
+
+    if (databaseUser) {
+      return {
+        name: databaseUser.name,
+        email: databaseUser.email,
+        role: userRoleSchema.catch("employee").parse(databaseUser.role)
+      };
+    }
+  }
+
+  const configuredUser = getCredentialUsers().find((item) => item.email.toLowerCase() === normalizedEmail);
+  if (!configuredUser) {
+    return null;
+  }
+
+  return {
+    name: configuredUser.name,
+    email: configuredUser.email,
+    role: configuredUser.role
+  };
+}
+
 export async function verifyCredentials(email: string, password: string): Promise<SessionUser | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const db = getDatabase();
@@ -201,8 +238,6 @@ export async function createCredentialUser(input: {
     throw new Error("An account already exists for that email.");
   }
 
-  // Self-registration always yields the lowest-privilege role; privileged roles are
-  // granted only through an authenticated system administrator.
   const user: SessionUser = {
     name,
     email,
