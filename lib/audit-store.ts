@@ -13,6 +13,8 @@ export type AuditEventInput = {
   details: Record<string, unknown>;
 };
 
+let memoryAuditQueue: Promise<void> = Promise.resolve();
+
 function isUniqueViolation(error: unknown) {
   if (!error || typeof error !== "object") {
     return false;
@@ -37,15 +39,21 @@ async function getMostRecentAuditHash() {
   return row?.hash ?? GENESIS_PREVIOUS_HASH;
 }
 
+function appendSerializedMemoryAuditEvent(input: AuditEventInput) {
+  const run = memoryAuditQueue.then(() => appendMemoryAuditEvent(input));
+  memoryAuditQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 /**
  * Appends an audit event without allowing two concurrent writers to claim the
- * same predecessor. The unique previous_hash index acts as a compare-and-swap
- * guard; a loser simply re-reads the new head and retries.
+ * same predecessor. Postgres uses a unique predecessor index as a compare-and-
+ * swap guard. Memory mode uses a small promise queue to preserve the same contract.
  */
 export async function appendAuditEvent(input: AuditEventInput): Promise<AuditEvent> {
   const db = getDatabase();
   if (!db) {
-    return appendMemoryAuditEvent(input);
+    return appendSerializedMemoryAuditEvent(input);
   }
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
