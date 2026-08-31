@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { setSessionUser } from "@/lib/auth";
 import { createCredentialUser } from "@/lib/auth-model";
-import { appendAuditEvent } from "@/lib/db";
+import { appendAuditEventSafely } from "@/lib/audit-store";
 import { consumeRateLimit, getClientAddress } from "@/lib/rate-limit";
 import { requireSameOrigin } from "@/lib/route-auth";
 import { parseJsonRequestBody, signupRequestSchema } from "@/lib/validation";
@@ -35,9 +35,8 @@ export async function POST(request: Request) {
 
   try {
     const user = await createCredentialUser(data);
-
     await setSessionUser(user);
-    await appendAuditEvent({
+    await appendAuditEventSafely({
       actor: user.email,
       actorRole: user.role,
       actorName: user.name,
@@ -46,9 +45,9 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ user }, { status: 201 });
-  } catch (error) {
+  } catch (signupError) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Signup failed." },
+      { error: signupError instanceof Error ? signupError.message : "Signup failed." },
       { status: 400 }
     );
   }
