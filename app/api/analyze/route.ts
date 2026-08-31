@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { canAccess, getSessionUser } from "@/lib/auth";
-import { analyzeResume } from "@/lib/skillmatch";
-import { saveAnalysis } from "@/lib/db";
+import { saveAnalysis } from "@/lib/candidate-store";
 import { requireSameOrigin } from "@/lib/route-auth";
+import { analyzeResume } from "@/lib/skillmatch";
 import { analyzeRequestSchema, parseJsonRequestBody } from "@/lib/validation";
 
 function canRunResumeAnalysis(user: Awaited<ReturnType<typeof getSessionUser>>) {
@@ -29,7 +29,10 @@ export async function POST(request: Request) {
   const saved = await saveAnalysis({
     employeeName: data.employeeName,
     resumeText: data.resumeText,
-    result
+    result,
+    auditActor: user!.email,
+    auditActorRole: user!.role,
+    auditActorName: user!.name
   });
 
   return NextResponse.json({ result, saved });
