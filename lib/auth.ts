@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import crypto from "node:crypto";
-import type { SessionUser } from "./auth-model";
+import { resolveCurrentSessionUser, type SessionUser } from "./auth-model";
 import { canAccess as canAccessByArea, type AccessArea } from "./auth-permissions";
 import { getAuthConfig } from "./env";
 import { sessionUserSchema, signedSessionPayloadSchema } from "./validation";
@@ -83,7 +83,17 @@ export function parseSessionToken(token?: string): SessionUser | null {
 
 export async function getSessionUser() {
   const cookieStore = await cookies();
-  return parseSessionToken(cookieStore.get(cookieName)?.value);
+  const parsed = parseSessionToken(cookieStore.get(cookieName)?.value);
+  if (!parsed) {
+    return null;
+  }
+
+  try {
+    return await resolveCurrentSessionUser(parsed);
+  } catch (error) {
+    console.error("Unable to revalidate the current session", error);
+    return null;
+  }
 }
 
 export async function setSessionUser(user: SessionUser) {
