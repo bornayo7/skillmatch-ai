@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { canAccess, getSessionUser } from "@/lib/auth";
-import { assignCandidateLearningModules } from "@/lib/db";
+import { assignCandidateLearningModules } from "@/lib/candidate-store";
 import { requireSameOrigin } from "@/lib/route-auth";
 import { serverErrorResponse } from "@/lib/server-api-error";
 
