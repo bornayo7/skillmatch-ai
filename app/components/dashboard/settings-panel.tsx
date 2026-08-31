@@ -26,13 +26,17 @@ export function SettingsPanel({
   runtimeStatus: LoadStatus;
   user: SessionUser;
 }) {
-  const databaseLabel = runtimeHealth?.database.configured
+  const hasRuntimeDetails = Boolean(runtimeHealth?.database);
+  const databaseLabel = runtimeHealth?.database?.configured
     ? `Postgres database${runtimeHealth.database.schemaReady ? "" : " (schema needs setup)"}`
-    : "Memory database fallback";
-  const storageLabel =
-    runtimeHealth?.storage?.provider === "r2"
+    : hasRuntimeDetails
+      ? "Memory database fallback"
+      : "Detailed runtime diagnostics are admin-only";
+  const storageLabel = runtimeHealth?.storage
+    ? runtimeHealth.storage.provider === "r2"
       ? "Cloudflare R2 / S3-compatible storage"
-      : "Local in-memory resume storage";
+      : "Local in-memory resume storage"
+    : "Storage details are admin-only";
   const visibleAreas = roleAccessSummary.filter((item) => item.allowed).map((item) => item.label);
   const hiddenAreas = roleAccessSummary.filter((item) => !item.allowed).map((item) => item.label);
 
@@ -46,14 +50,18 @@ export function SettingsPanel({
           <span>{roleLabel(user.role)}</span>
         </div>
         <div>
-          <h2>Demo runtime mode</h2>
+          <h2>Runtime status</h2>
           <p>{runtimeStatus === "loading" ? "Loading runtime status..." : databaseLabel}</p>
           <p>{runtimeStatus === "loading" ? "Checking resume storage..." : storageLabel}</p>
-          <p>
-            {runtimeHealth?.storage?.objectDeletionSupported === false
-              ? "Stored resume cleanup is not available for the current storage configuration."
-              : "Stored resume cleanup is supported for local demo objects and configured R2 objects."}
-          </p>
+          {runtimeHealth?.storage ? (
+            <p>
+              {runtimeHealth.storage.objectDeletionSupported === false
+                ? "Stored resume cleanup is not available for the current storage configuration."
+                : "Stored resume cleanup is supported for local demo objects and configured R2 objects."}
+            </p>
+          ) : (
+            <p>System administrators can inspect persistence, schema, and storage details.</p>
+          )}
         </div>
       </section>
 
