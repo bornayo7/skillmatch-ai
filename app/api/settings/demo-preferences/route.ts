@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { appendAuditEvent } from "@/lib/audit-store";
 import { canAccess, getSessionUser } from "@/lib/auth";
-import { appendAuditEvent } from "@/lib/db";
 import { requireSameOrigin } from "@/lib/route-auth";
 import { serverErrorResponse } from "@/lib/server-api-error";
 
