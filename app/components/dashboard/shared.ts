@@ -16,7 +16,7 @@ export type NavAccess = "all" | "candidate_analysis" | AccessArea;
 
 export type RuntimeHealth = {
   status: string;
-  database: {
+  database?: {
     configured: boolean;
     mode: string;
     schemaReady: boolean;
@@ -32,6 +32,10 @@ export type RuntimeHealth = {
     objectDeletionSupported: boolean;
     error?: string;
   };
+  auth?: {
+    demoCredentialsActive: boolean;
+  };
+  error?: string;
 };
 
 export type DemoSettingsPreferences = {
