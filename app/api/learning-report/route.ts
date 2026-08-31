@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { canAccess, getSessionUser } from "@/lib/auth";
-import { appendAuditEvent, listCandidateRecommendations } from "@/lib/db";
+import { appendAuditEventSafely } from "@/lib/audit-store";
+import { listCandidateRecommendations } from "@/lib/candidate-store";
 import { buildLearningReport } from "@/lib/learning-report";
 import { serverErrorResponse } from "@/lib/server-api-error";
 
@@ -14,9 +15,9 @@ export async function GET() {
   }
 
   try {
-    const candidates = await listCandidateRecommendations({});
+    const candidates = await listCandidateRecommendations({}, { limit: null });
     const report = buildLearningReport(candidates);
-    await appendAuditEvent({
+    await appendAuditEventSafely({
       actor: user!.email,
       actorRole: user!.role,
       actorName: user!.name,
