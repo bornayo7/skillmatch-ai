@@ -57,6 +57,41 @@ export const overrideRequestSchema = z.object({
   reason: z.string().trim().min(3).default("Manual review")
 });
 
+const boundedSkillArray = z
+  .array(z.string().trim().min(1).max(120))
+  .max(100)
+  .optional();
+
+export const savedTargetRoleRequestSchema = z.object({
+  roleId: roleIdSchema,
+  targetScore: z.number().int().min(1).max(100).optional(),
+  currentScore: z.number().int().min(0).max(100).nullable().optional(),
+  matchedSkills: boundedSkillArray,
+  missingSkills: boundedSkillArray
+}).strict();
+
+const optionalAuditDateSchema = z
+  .string()
+  .trim()
+  .max(80)
+  .optional()
+  .refine((value) => !value || !Number.isNaN(Date.parse(value)), "Use a valid ISO date or date-time.");
+
+export const auditFilterSchema = z.object({
+  action: z.string().trim().max(120).optional(),
+  actor: z.string().trim().max(320).optional(),
+  entityId: z.string().trim().max(200).optional(),
+  startDate: optionalAuditDateSchema,
+  endDate: optionalAuditDateSchema,
+  limit: z.number().int().min(1).max(200).optional()
+}).refine(
+  (filters) =>
+    !filters.startDate ||
+    !filters.endDate ||
+    Date.parse(filters.startDate) <= Date.parse(filters.endDate),
+  { message: "Start date must be before end date." }
+);
+
 export function parseJsonRequest<T>(schema: z.ZodType<T>, body: unknown) {
   const parsed = schema.safeParse(body);
   if (parsed.success) {
