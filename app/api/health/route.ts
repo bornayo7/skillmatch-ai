@@ -1,19 +1,26 @@
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { getSessionUser } from "@/lib/auth";
 import { getAuthConfig, getDatabaseConfig, getStorageConfig } from "@/lib/env";
 
 const requiredTables = [
   "users",
   "analyses",
   "audit_events",
+  "admin_alerts",
   "candidate_recommendations",
   "saved_target_roles"
 ] as const;
 
-/** Tables expected to exist; columns checked only when the table is already present. */
 const requiredColumns = [
+  { table: "analyses", column: "candidate_id" },
   { table: "candidate_recommendations", column: "ai_insight" },
-  { table: "candidate_recommendations", column: "assigned_learning_modules" }
+  { table: "candidate_recommendations", column: "assigned_learning_modules" },
+  { table: "candidate_recommendations", column: "duplicate_key" },
+  { table: "audit_events", column: "actor_role" },
+  { table: "audit_events", column: "actor_name" },
+  { table: "audit_events", column: "previous_hash" },
+  { table: "audit_events", column: "hash" }
 ] as const;
 
 export const dynamic = "force-dynamic";
@@ -29,7 +36,7 @@ function getStorageHealth() {
       publicBaseUrlConfigured: storage.provider === "r2" ? Boolean(storage.publicBaseUrl) : false,
       objectDeletionSupported: true,
     };
-  } catch (error) {
+  } catch {
     return {
       configured: true,
       provider: "unknown",
@@ -37,12 +44,11 @@ function getStorageHealth() {
       persistent: false,
       publicBaseUrlConfigured: false,
       objectDeletionSupported: false,
-      error: error instanceof Error ? error.message : "Storage health check failed.",
+      error: "Storage health check failed.",
     };
   }
 }
 
-/** Whether the built-in demo credential users are active (no AUTH_USERS_JSON configured). */
 function getAuthHealth() {
   try {
     return { demoCredentialsActive: getAuthConfig(process.env, { requireUsers: false }).usesFallbackUsers };
@@ -51,30 +57,63 @@ function getAuthHealth() {
   }
 }
 
-function createMemoryHealthResponse() {
-  return NextResponse.json({
-    status: "ok",
-    database: {
-      configured: false,
-      mode: "memory",
-      schemaReady: false,
-      missingTables: requiredTables,
-      missingColumns: [] as string[]
-    },
-    storage: getStorageHealth(),
-    auth: getAuthHealth()
-  });
+async function canSeeDetails() {
+  const user = await getSessionUser().catch(() => null);
+  return user?.role === "system_admin";
+}
+
+function minimalResponse(status: "ok" | "degraded", httpStatus: number) {
+  return NextResponse.json({ status }, { status: httpStatus });
 }
 
 export async function GET() {
-  const { url } = getDatabaseConfig();
+  const detailed = await canSeeDetails();
+  let databaseUrl: string | null = null;
 
-  if (!url) {
-    return createMemoryHealthResponse();
+  try {
+    databaseUrl = getDatabaseConfig().url;
+  } catch (error) {
+    console.error("Runtime health configuration failed", error);
+    return detailed
+      ? NextResponse.json(
+          {
+            status: "degraded",
+            database: {
+              configured: false,
+              mode: "unavailable",
+              schemaReady: false,
+              missingTables: [...requiredTables],
+              missingColumns: requiredColumns.map(({ table, column }) => `${table}.${column}`)
+            },
+            storage: getStorageHealth(),
+            auth: getAuthHealth(),
+            error: "Runtime configuration is incomplete."
+          },
+          { status: 503 }
+        )
+      : minimalResponse("degraded", 503);
+  }
+
+  if (!databaseUrl) {
+    if (!detailed) {
+      return minimalResponse("ok", 200);
+    }
+    return NextResponse.json({
+      status: "ok",
+      database: {
+        configured: false,
+        mode: "memory",
+        schemaReady: false,
+        missingTables: requiredTables,
+        missingColumns: [] as string[]
+      },
+      storage: getStorageHealth(),
+      auth: getAuthHealth()
+    });
   }
 
   try {
-    const sql = neon(url);
+    const sql = neon(databaseUrl);
     const tableRows = await sql`
       select table_name
       from information_schema.tables
@@ -100,10 +139,15 @@ export async function GET() {
     }
 
     const schemaReady = missingTables.length === 0 && missingColumns.length === 0;
+    const status = schemaReady ? "ok" : "degraded";
+    const httpStatus = schemaReady ? 200 : 503;
+    if (!detailed) {
+      return minimalResponse(status, httpStatus);
+    }
 
     return NextResponse.json(
       {
-        status: schemaReady ? "ok" : "degraded",
+        status,
         database: {
           configured: true,
           mode: "postgres",
@@ -114,9 +158,13 @@ export async function GET() {
         storage: getStorageHealth(),
         auth: getAuthHealth()
       },
-      { status: schemaReady ? 200 : 503 }
+      { status: httpStatus }
     );
   } catch (error) {
+    console.error("Database health check failed", error);
+    if (!detailed) {
+      return minimalResponse("degraded", 503);
+    }
     return NextResponse.json(
       {
         status: "degraded",
@@ -129,7 +177,7 @@ export async function GET() {
         },
         storage: getStorageHealth(),
         auth: getAuthHealth(),
-        error: error instanceof Error ? error.message : "Database health check failed."
+        error: "Database health check failed."
       },
       { status: 503 }
     );
