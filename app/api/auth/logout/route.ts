@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { clearSessionUser, getSessionUser } from "@/lib/auth";
-import { appendAuditEvent } from "@/lib/db";
+import { appendAuditEventSafely } from "@/lib/audit-store";
 import { requireSameOrigin } from "@/lib/route-auth";
 
 export async function POST(request: Request) {
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
   const user = await getSessionUser();
   await clearSessionUser();
-  await appendAuditEvent({
+  await appendAuditEventSafely({
     actor: user?.email ?? "unknown",
     actorRole: user?.role ?? null,
     actorName: user?.name ?? null,
