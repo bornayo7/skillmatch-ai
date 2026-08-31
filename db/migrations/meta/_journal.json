@@ -50,6 +50,13 @@
       "when": 1778030000000,
       "tag": "0006_admin_alerts_and_audit_chain",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0007_candidate_lifecycle_hardening",
+      "breakpoints": true
     }
   ]
 }
