@@ -24,10 +24,35 @@ export const users = pgTable(
   (table) => [uniqueIndex("users_email_idx").on(table.email)]
 );
 
+export const candidateRecommendations = pgTable(
+  "candidate_recommendations",
+  {
+    id: uuid("id").primaryKey(),
+    candidateName: text("candidate_name").notNull(),
+    fileName: text("file_name").notNull(),
+    storageUrl: text("storage_url").notNull(),
+    duplicateKey: text("duplicate_key"),
+    structuredResume: jsonb("structured_resume").notNull(),
+    topPositions: jsonb("top_positions").notNull(),
+    aiInsight: jsonb("ai_insight").$type<ResumeAiInsight | null>(),
+    assignedLearningModules: jsonb("assigned_learning_modules").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    bestRoleTitle: text("best_role_title").notNull(),
+    bestScore: integer("best_score").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    index("candidate_recommendations_created_at_idx").on(table.createdAt.desc()),
+    index("candidate_recommendations_best_score_idx").on(table.bestScore.desc()),
+    uniqueIndex("candidate_recommendations_duplicate_key_idx").on(table.duplicateKey),
+    check("candidate_recommendations_best_score_check", sql`${table.bestScore} >= 0 and ${table.bestScore} <= 100`)
+  ]
+);
+
 export const analyses = pgTable(
   "analyses",
   {
     id: uuid("id").primaryKey(),
+    candidateId: uuid("candidate_id").references(() => candidateRecommendations.id, { onDelete: "cascade" }),
     employeeName: text("employee_name").notNull(),
     targetRoleId: text("target_role_id").notNull(),
     targetRoleTitle: text("target_role_title").notNull(),
@@ -41,6 +66,7 @@ export const analyses = pgTable(
   (table) => [
     index("analyses_created_at_idx").on(table.createdAt.desc()),
     index("analyses_target_role_idx").on(table.targetRoleId),
+    index("analyses_candidate_id_idx").on(table.candidateId),
     check("analyses_score_check", sql`${table.score} >= 0 and ${table.score} <= 100`)
   ]
 );
@@ -65,7 +91,8 @@ export const auditEvents = pgTable(
     index("audit_events_created_at_idx").on(table.createdAt.desc()),
     index("audit_events_action_idx").on(table.action),
     index("audit_events_actor_idx").on(table.actor),
-    index("audit_events_entity_id_idx").on(table.entityId)
+    index("audit_events_entity_id_idx").on(table.entityId),
+    uniqueIndex("audit_events_previous_hash_unique_idx").on(table.previousHash)
   ]
 );
 
@@ -87,28 +114,6 @@ export const adminAlerts = pgTable(
     index("admin_alerts_created_at_idx").on(table.createdAt.desc()),
     check("admin_alerts_severity_check", sql`${table.severity} in ('info','warning','critical')`),
     check("admin_alerts_status_check", sql`${table.status} in ('open','resolved')`)
-  ]
-);
-
-export const candidateRecommendations = pgTable(
-  "candidate_recommendations",
-  {
-    id: uuid("id").primaryKey(),
-    candidateName: text("candidate_name").notNull(),
-    fileName: text("file_name").notNull(),
-    storageUrl: text("storage_url").notNull(),
-    structuredResume: jsonb("structured_resume").notNull(),
-    topPositions: jsonb("top_positions").notNull(),
-    aiInsight: jsonb("ai_insight").$type<ResumeAiInsight | null>(),
-    assignedLearningModules: jsonb("assigned_learning_modules").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-    bestRoleTitle: text("best_role_title").notNull(),
-    bestScore: integer("best_score").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-  },
-  (table) => [
-    index("candidate_recommendations_created_at_idx").on(table.createdAt.desc()),
-    index("candidate_recommendations_best_score_idx").on(table.bestScore.desc()),
-    check("candidate_recommendations_best_score_check", sql`${table.bestScore} >= 0 and ${table.bestScore} <= 100`)
   ]
 );
 
