@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { appendAuditEventSafely } from "@/lib/audit-store";
 import { canAccess, getSessionUser } from "@/lib/auth";
-import { appendAuditEvent, resolveAdminAlert } from "@/lib/db";
+import { resolveAdminAlert } from "@/lib/db";
 import { requireSameOrigin } from "@/lib/route-auth";
 
 export async function POST(
@@ -26,7 +27,7 @@ export async function POST(
     return NextResponse.json({ error: "Alert not found." }, { status: 404 });
   }
 
-  await appendAuditEvent({
+  await appendAuditEventSafely({
     actor: user!.email,
     actorRole: user!.role,
     actorName: user!.name,
