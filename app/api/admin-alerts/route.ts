@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { appendAuditEventSafely } from "@/lib/audit-store";
 import { canAccess, getSessionUser } from "@/lib/auth";
 import {
-  appendAuditEvent,
   listAdminAlerts,
   recordAdminAlert,
   type AdminAlertSeverity,
@@ -30,12 +30,6 @@ export async function GET(request: Request) {
   return NextResponse.json({ alerts });
 }
 
-/**
- * Admin-triggered placeholder/demo alerts. The real failure paths (storage,
- * database, upload parsing) record alerts directly inside the upload route;
- * this endpoint is mainly used by tests and to seed a "future sync failed"
- * placeholder alert from the dashboard.
- */
 export async function POST(request: Request) {
   const originError = requireSameOrigin(request);
   if (originError) {
@@ -82,7 +76,7 @@ export async function POST(request: Request) {
     details: { ...details, recordedBy: user!.email },
   });
 
-  await appendAuditEvent({
+  await appendAuditEventSafely({
     actor: user!.email,
     actorRole: user!.role,
     actorName: user!.name,
