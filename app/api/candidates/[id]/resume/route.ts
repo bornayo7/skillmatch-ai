@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCandidateResumeById } from "@/lib/db";
+import { getCandidateResumeById } from "@/lib/candidate-store";
 import { requireAccessArea } from "@/lib/route-auth";
 import { getResumeObject } from "@/lib/storage";
 
@@ -23,8 +23,6 @@ function safeAttachmentName(fileName: string) {
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  // Raw resumes contain PII: only recruiting roles (recruiter, hiring manager, admin) may
-  // retrieve the original document. L&D works from structured skill data instead.
   const { user, response } = await requireAccessArea("recruiter");
   if (!user) {
     return response;
