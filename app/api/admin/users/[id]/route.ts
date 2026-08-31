@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
+import { appendAuditEventSafely } from "@/lib/audit-store";
 import { listCredentialUserAccounts, updateCredentialUserRole } from "@/lib/auth-model";
-import { appendAuditEvent } from "@/lib/db";
 import { requireAccessArea, requireSameOrigin } from "@/lib/route-auth";
 import { serverErrorResponse } from "@/lib/server-api-error";
 import { userRoleSchema } from "@/lib/validation";
 
 /**
- * Admin-only role assignment. This is the only path that grants privileged
- * roles — public signup always creates employees. Every change is audited.
+ * Admin-only role assignment. Public signup always creates employees. Existing
+ * signed sessions are revalidated against the current account role on every
+ * authenticated request, so demotions take effect immediately.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const originError = requireSameOrigin(request);
@@ -42,8 +43,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
-    // Admins cannot change their own role, so the last administrator can never
-    // accidentally lock the workspace out of admin access.
     if (target.email === user.email) {
       return NextResponse.json(
         { error: "Administrators cannot change their own role." },
@@ -57,7 +56,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
-    await appendAuditEvent({
+    await appendAuditEventSafely({
       actor: user.email,
       actorRole: user.role,
       actorName: user.name,
