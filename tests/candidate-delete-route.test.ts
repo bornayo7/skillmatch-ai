@@ -13,7 +13,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/db", () => ({
+vi.mock("@/lib/candidate-store", () => ({
   deleteCandidateRecommendation: mockDeleteCandidateRecommendation,
 }));
 
