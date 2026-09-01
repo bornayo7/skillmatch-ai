@@ -10,4 +10,3 @@ npm-debug.log*
 test-results
 playwright-report
 ui-review-screenshots
-.claude/
